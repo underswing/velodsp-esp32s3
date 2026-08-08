@@ -1,0 +1,26 @@
+# ESP-IDF build output
+build/
+build_*_*/
+
+# ESP-IDF generated configuration
+sdkconfig
+sdkconfig.old
+
+# ESP-IDF Component Manager
+managed_components/
+
+# CLion / JetBrains
+.idea/
+cmake-build-*/
+
+# Python
+__pycache__/
+*.py[cod]
+.pytest_cache/
+
+# OS/editor
+.DS_Store
+Thumbs.db
+*.swp
+*.swo
+*~
