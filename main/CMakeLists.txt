@@ -1,5 +1,7 @@
 idf_component_register(
         SRCS "main.c"
         INCLUDE_DIRS "."
-        REQUIRES status_led
+        REQUIRES
+            status_led
+            wifi
 )
