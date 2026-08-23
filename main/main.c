@@ -6,6 +6,7 @@
 #include "status_led.h"
 #include "web_server.h"
 #include "wifi.h"
+#include "discovery.h"
 
 #define RGB_LED_GPIO 38
 
@@ -16,6 +17,8 @@ static void wifi_status_changed(wifi_status_t status) {
         case WIFI_STATUS_CONNECTED:
             status_led_set_hsv(120, 255, 10);
 
+            // components are idempotent
+            ESP_ERROR_CHECK(discovery_start());
             ESP_ERROR_CHECK(web_server_start());
 
             break;

@@ -5,4 +5,5 @@ idf_component_register(
             status_led
             wifi
             web_server
+            discovery
 )
