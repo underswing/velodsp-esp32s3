@@ -4,4 +4,5 @@ idf_component_register(
         REQUIRES
             status_led
             wifi
+            web_server
 )

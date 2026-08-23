@@ -1,8 +1,10 @@
 #include <stdint.h>
 
+#include "esp_check.h"
 #include "esp_err.h"
 #include "esp_log.h"
 #include "status_led.h"
+#include "web_server.h"
 #include "wifi.h"
 
 #define RGB_LED_GPIO 38
@@ -13,6 +15,9 @@ static void wifi_status_changed(wifi_status_t status) {
     switch (status) {
         case WIFI_STATUS_CONNECTED:
             status_led_set_hsv(120, 255, 10);
+
+            ESP_ERROR_CHECK(web_server_start());
+
             break;
 
         case WIFI_STATUS_DISCONNECTED:
