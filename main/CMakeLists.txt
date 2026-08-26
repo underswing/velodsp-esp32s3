@@ -6,4 +6,5 @@ idf_component_register(
             wifi
             web_server
             discovery
+            device_state
 )
