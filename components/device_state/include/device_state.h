@@ -2,6 +2,8 @@
 
 #include <stdint.h>
 
+#include "esp_err.h"
+
 #define INPUT_COUNT  4
 #define OUTPUT_COUNT 8
 #define PEQ_BANDS    10
@@ -52,4 +54,4 @@ typedef struct {
 
 const device_state_t* device_state_get(void);
 
-device_state_t generate_empty_device_state(void);
+esp_err_t device_state_init(void);

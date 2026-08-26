@@ -7,6 +7,7 @@
 #include "web_server.h"
 #include "wifi.h"
 #include "discovery.h"
+#include "device_state.h"
 
 #define RGB_LED_GPIO 38
 
@@ -30,6 +31,8 @@ static void wifi_status_changed(wifi_status_t status) {
 }
 
 void app_main(void) {
+    ESP_ERROR_CHECK(device_state_init());
+
     esp_err_t err;
 
     err = status_led_init(RGB_LED_GPIO);

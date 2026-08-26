@@ -3,18 +3,19 @@
 #include "esp_check.h"
 #include "esp_http_server.h"
 #include "esp_log.h"
+#include "protocol.h"
 
 static const char *TAG = "web_server";
 
 static httpd_handle_t s_server = nullptr;
 
+static esp_err_t websocket_connected(httpd_req_t *req) {
+    ESP_LOGI(TAG, "WebSocket connected");
+    return protocol_send_state(req, 1);
+}
+
 static esp_err_t websocket_handler(httpd_req_t *req)
 {
-    if (req->method == HTTP_GET) {
-        ESP_LOGI(TAG, "WebSocket connected");
-        return ESP_OK;
-    }
-
     httpd_ws_frame_t frame = {0};
 
     ESP_RETURN_ON_ERROR(
@@ -63,6 +64,7 @@ esp_err_t web_server_start(void) {
         .handler = websocket_handler,
         .user_ctx = NULL,
         .is_websocket = true,
+        .ws_post_handshake_cb = websocket_connected
     };
 
     err = httpd_register_uri_handler(s_server, &ws_uri);
