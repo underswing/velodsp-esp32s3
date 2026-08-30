@@ -92,6 +92,8 @@ esp_err_t wifi_init_sta(void) {
 
     ESP_RETURN_ON_ERROR(esp_wifi_start(), TAG, "Failed to start Wi-Fi");
 
+    ESP_RETURN_ON_ERROR(esp_wifi_set_ps(WIFI_PS_NONE), TAG, "Failed to disable Wi-Fi power saving");
+
     s_wifi_initialized = true;
 
     return ESP_OK;
