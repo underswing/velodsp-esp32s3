@@ -16,8 +16,7 @@ static esp_err_t websocket_connected(httpd_req_t *req) {
     return protocol_send_hello(req);
 }
 
-static esp_err_t websocket_handler(httpd_req_t *req)
-{
+static esp_err_t websocket_handler(httpd_req_t *req) {
     httpd_ws_frame_t frame = {};
 
     ESP_RETURN_ON_ERROR(
@@ -26,19 +25,29 @@ static esp_err_t websocket_handler(httpd_req_t *req)
         "Failed to get frame length"
     );
 
-    std::vector<uint8_t> buffer(frame.len + 1);
+    if (frame.type != HTTPD_WS_TYPE_TEXT) {
+        ESP_LOGW(TAG, "Unsupported WebSocket frame type: %d", frame.type);
+        return ESP_OK;
+    }
 
-    frame.payload = buffer.data();
+    auto *buffer = static_cast<char *>(malloc(frame.len + 1));
+    if (buffer == nullptr) {
+        return ESP_ERR_NO_MEM;
+    }
+
+    frame.payload = reinterpret_cast<uint8_t *>(buffer);
 
     esp_err_t err = httpd_ws_recv_frame(req, &frame, frame.len);
 
     if (err == ESP_OK) {
         buffer[frame.len] = '\0';
 
-        ESP_LOGI(TAG, "Received WS message: %s", reinterpret_cast<char *>(buffer.data()));
+        ESP_LOGD(TAG, "Received WebSocket message: %.*s", static_cast<int>(frame.len), buffer);
 
-        err = httpd_ws_send_frame(req, &frame);
+        err = protocol_handle_message(req, buffer, frame.len);
     }
+
+    free(buffer);
 
     return err;
 }

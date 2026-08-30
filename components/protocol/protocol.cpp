@@ -1,5 +1,8 @@
 #include "protocol.hpp"
 
+#include <array>
+#include <string_view>
+
 #include "cJSON.h"
 #include "esp_log.h"
 
@@ -42,7 +45,7 @@ static cJSON *serialize_output(const output_state_t *output) {
         cJSON_Delete(obj);
         return nullptr;
     }
-    for (const auto & i : output->peq) {
+    for (const auto &i: output->peq) {
         cJSON *band = serialize_peq_band(&i);
 
         if (band == nullptr) {
@@ -68,7 +71,7 @@ static cJSON *serialize_input(const input_state_t *input) {
         cJSON_Delete(obj);
         return nullptr;
     }
-    for (const auto & i : input->peq) {
+    for (const auto &i: input->peq) {
         cJSON *band = serialize_peq_band(&i);
 
         if (band == nullptr) {
@@ -91,7 +94,7 @@ static cJSON *serialize_dsp_config(const dsp_config_t *config) {
         cJSON_Delete(root);
         return nullptr;
     }
-    for (const auto & i : config->inputs) {
+    for (const auto &i: config->inputs) {
         cJSON *input = serialize_input(&i);
         if (input == nullptr) {
             cJSON_Delete(root);
@@ -106,7 +109,7 @@ static cJSON *serialize_dsp_config(const dsp_config_t *config) {
         cJSON_Delete(root);
         return nullptr;
     }
-    for (const auto & i : config->outputs) {
+    for (const auto &i: config->outputs) {
         cJSON *output = serialize_output(&i);
         if (output == nullptr) {
             cJSON_Delete(root);
@@ -196,6 +199,83 @@ esp_err_t protocol_send_state(httpd_req_t *req, const int request_id) {
     cJSON_AddItemToObject(root, "state", state_json);
 
     const esp_err_t err = send_json(req, root);
+
+    cJSON_Delete(root);
+
+    return err;
+}
+
+static esp_err_t send_error(httpd_req_t *req, int request_id, const char *message) {
+    cJSON *root = cJSON_CreateObject();
+    if (root == nullptr) {
+        return ESP_ERR_NO_MEM;
+    }
+
+    if (request_id >= 0) cJSON_AddNumberToObject(root, "id", request_id);
+    cJSON_AddStringToObject(root, "type", "error");
+    cJSON_AddStringToObject(root, "error", message);
+
+    const esp_err_t err = send_json(req, root);
+    cJSON_Delete(root);
+
+    return err;
+}
+
+static esp_err_t handle_get_state(httpd_req_t *req, int request_id, const cJSON *root) {
+    (void) root;
+    return protocol_send_state(req, request_id);
+}
+
+using ProtocolHandler = esp_err_t (*)(
+    httpd_req_t *req,
+    int request_id,
+    const cJSON *root
+);
+
+struct ProtocolCommand {
+    std::string_view type;
+    ProtocolHandler handler;
+};
+
+static constexpr std::array COMMANDS{
+    ProtocolCommand{"get_state", handle_get_state},
+    //ProtocolCommand{"set_output_gain", handle_set_output_gain},
+};
+
+static esp_err_t dispatch_command(httpd_req_t *req, int request_id, const cJSON *root, std::string_view type) {
+    for (const auto &command: COMMANDS) {
+        if (command.type == type) {
+            return command.handler(req, request_id, root);
+        }
+    }
+
+    return send_error(req, request_id, "unknown_command");
+}
+
+esp_err_t protocol_handle_message(httpd_req_t *req, const char *data, size_t len) {
+    cJSON *root = cJSON_ParseWithLength(data, len);
+
+    if (root == nullptr) {
+        return send_error(req, -1, "invalid_json");
+    }
+
+    const cJSON *type = cJSON_GetObjectItemCaseSensitive(root, "type");
+
+    const cJSON *id = cJSON_GetObjectItemCaseSensitive(root, "id");
+
+    if (!cJSON_IsString(type)) {
+        cJSON_Delete(root);
+        return send_error(req, -1, "missing_type");
+    }
+
+    if (!cJSON_IsNumber(id)) {
+        cJSON_Delete(root);
+        return send_error(req, -1, "missing_id");
+    }
+
+    const int request_id = id->valueint;
+
+    const esp_err_t err = dispatch_command(req, request_id, root, type->valuestring);
 
     cJSON_Delete(root);
 
