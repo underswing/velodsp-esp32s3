@@ -1,6 +1,10 @@
 #include "protocol.hpp"
 
 #include <array>
+#include <cmath>
+#include <optional>
+#include <limits>
+#include <cstring>
 #include <string_view>
 
 #include "cJSON.h"
@@ -11,6 +15,76 @@
 namespace protocol {
     namespace {
         constexpr char TAG[] = "protocol";
+
+        enum class JsonFieldError {
+            Ok,
+            Missing,
+            WrongType,
+            NotFinite,
+            NotInteger,
+            OutOfRange,
+        };
+
+        JsonFieldError json_get_int(const cJSON *root, const char *name, int *out) {
+            const cJSON *item = cJSON_GetObjectItemCaseSensitive(root, name);
+
+            if (item == nullptr) return JsonFieldError::Missing;
+
+            if (!cJSON_IsNumber(item)) return JsonFieldError::WrongType;
+
+            const double value = item->valuedouble;
+
+            if (!std::isfinite(value)) return JsonFieldError::NotFinite;
+
+            if (std::floor(value) != value) return JsonFieldError::NotInteger;
+
+            if (value < std::numeric_limits<int>::min() || value > std::numeric_limits<int>::max()) {
+                return JsonFieldError::OutOfRange;
+            }
+
+            *out = static_cast<int>(value);
+            return JsonFieldError::Ok;
+        }
+
+        JsonFieldError json_get_float(const cJSON *root, const char *name, float *out) {
+            const cJSON *item = cJSON_GetObjectItemCaseSensitive(root, name);
+
+            if (item == nullptr) return JsonFieldError::Missing;
+
+            if (!cJSON_IsNumber(item)) return JsonFieldError::WrongType;
+
+            const double value = item->valuedouble;
+
+            if (!std::isfinite(value)) return JsonFieldError::NotFinite;
+
+            if (value < std::numeric_limits<float>::lowest() || value > std::numeric_limits<float>::max()) {
+                return JsonFieldError::OutOfRange;
+            }
+
+            *out = static_cast<float>(value);
+            return JsonFieldError::Ok;
+        }
+
+        JsonFieldError json_get_uint32(const cJSON *root, const char *name, uint32_t *out) {
+            const cJSON *item = cJSON_GetObjectItemCaseSensitive(root, name);
+
+            if (item == nullptr) return JsonFieldError::Missing;
+
+            if (!cJSON_IsNumber(item)) return JsonFieldError::WrongType;
+
+            const double value = item->valuedouble;
+
+            if (!std::isfinite(value)) return JsonFieldError::NotFinite;
+
+            if (std::floor(value) != value) return JsonFieldError::NotInteger;
+
+            if (value < 0 || value > std::numeric_limits<uint32_t>::max()) {
+                return JsonFieldError::OutOfRange;
+            }
+
+            *out = static_cast<uint32_t>(value);
+            return JsonFieldError::Ok;
+        }
 
         const char *filter_type_to_string(device::FilterType type) {
             switch (type) {
@@ -124,7 +198,7 @@ namespace protocol {
             return root;
         }
 
-        cJSON *serialize_device_state(const device::State& state) {
+        cJSON *serialize_device_state(const device::State &state) {
             cJSON *root = cJSON_CreateObject();
             if (root == nullptr) return nullptr;
 
@@ -163,15 +237,31 @@ namespace protocol {
             return err;
         }
 
-        esp_err_t send_error(httpd_req_t *req, int request_id, const char *message) {
+        esp_err_t send_error(httpd_req_t *req, std::optional<uint32_t> request_id, const char *code,
+                             const char *field = nullptr,
+                             const char *message = nullptr) {
             cJSON *root = cJSON_CreateObject();
             if (root == nullptr) {
                 return ESP_ERR_NO_MEM;
             }
 
-            if (request_id >= 0) cJSON_AddNumberToObject(root, "id", request_id);
+            if (request_id.has_value()) {
+                cJSON_AddNumberToObject(root, "id", request_id.value());
+            }
+
             cJSON_AddStringToObject(root, "type", "error");
-            cJSON_AddStringToObject(root, "error", message);
+
+            cJSON *error = cJSON_AddObjectToObject(root, "error");
+            if (error == nullptr) {
+                cJSON_Delete(root);
+                return ESP_ERR_NO_MEM;
+            }
+
+            cJSON_AddStringToObject(error, "code", code);
+
+            if (field != nullptr) cJSON_AddStringToObject(error, "field", field);
+
+            if (message != nullptr) cJSON_AddStringToObject(error, "message", message);
 
             const esp_err_t err = send_json(req, root);
             cJSON_Delete(root);
@@ -179,7 +269,30 @@ namespace protocol {
             return err;
         }
 
-        esp_err_t send_ok(httpd_req_t *req, int request_id) {
+        esp_err_t send_field_error(httpd_req_t *req, const std::optional<uint32_t> request_id, const char *field,
+                                   const JsonFieldError error) {
+            switch (error) {
+                case JsonFieldError::Missing:
+                    return send_error(req, request_id, "missing_argument", field);
+
+                case JsonFieldError::WrongType:
+                    return send_error(req, request_id, "wrong_type", field);
+
+                case JsonFieldError::NotFinite:
+                case JsonFieldError::OutOfRange:
+                    return send_error(req, request_id, "invalid_value", field);
+
+                case JsonFieldError::NotInteger:
+                    return send_error(req, request_id, "not_integer", field);
+
+                case JsonFieldError::Ok:
+                    break;
+            }
+
+            return ESP_ERR_INVALID_STATE;
+        }
+
+        esp_err_t send_ok(httpd_req_t *req, uint32_t request_id) {
             cJSON *root = cJSON_CreateObject();
             if (root == nullptr) {
                 return ESP_ERR_NO_MEM;
@@ -194,34 +307,39 @@ namespace protocol {
             return err;
         }
 
-        esp_err_t handle_get_state(httpd_req_t *req, const int request_id, const cJSON *root) {
+        esp_err_t handle_get_state(httpd_req_t *req, const uint32_t request_id, const cJSON *root) {
             (void) root;
             return send_state(req, request_id);
         }
 
-        esp_err_t handle_set_output_gain(httpd_req_t *req, const int request_id, const cJSON *root) {
-            const cJSON *output = cJSON_GetObjectItemCaseSensitive(root, "output");
-            const cJSON *gain = cJSON_GetObjectItemCaseSensitive(root, "gain_db");
+        esp_err_t handle_set_output_gain(httpd_req_t *req, const uint32_t request_id, const cJSON *root) {
+            uint32_t output_index;
 
-            if (!cJSON_IsNumber(output) || !cJSON_IsNumber(gain)) {
-                return send_error(req, request_id, "invalid_arguments");
+            const auto output_err = json_get_uint32(root, "output", &output_index);
+
+            if (output_err != JsonFieldError::Ok) {
+                return send_field_error(req, request_id, "output", output_err);
             }
 
-            const int output_index = output->valueint;
-            const auto gain_db = static_cast<float>(gain->valuedouble);
+            float gain_db;
+            const auto gain_err = json_get_float(root, "gain_db", &gain_db);
+
+            if (gain_err != JsonFieldError::Ok) {
+                return send_field_error(req, request_id, "gain_db", gain_err);
+            }
 
             switch (device::set_output_gain(output_index, gain_db)) {
                 case device::DeviceError::Ok:
                     return send_ok(req, request_id);
 
                 case device::DeviceError::InvalidOutput:
-                    return send_error(req, request_id, "invalid_output");
+                    return send_error(req, request_id, "out_of_range", "output", "output does not exist");
 
                 case device::DeviceError::GainOutOfRange:
-                    return send_error(req, request_id, "gain_out_of_range");
+                    return send_error(req, request_id, "out_of_range", "gain_db", "gain_db must be between -80 and 12");
 
                 case device::DeviceError::InvalidGain:
-                    return send_error(req, request_id, "invalid_gain");
+                    return send_error(req, request_id, "invalid_gain", "gain_db");
             }
 
             return send_error(req, request_id, "internal_error");
@@ -230,7 +348,7 @@ namespace protocol {
 
         using ProtocolHandler = esp_err_t (*)(
             httpd_req_t *req,
-            int request_id,
+            uint32_t request_id,
             const cJSON *root
         );
 
@@ -244,7 +362,7 @@ namespace protocol {
             ProtocolCommand{"set_output_gain", handle_set_output_gain},
         };
 
-        esp_err_t dispatch_command(httpd_req_t *req, int request_id, const cJSON *root, std::string_view type) {
+        esp_err_t dispatch_command(httpd_req_t *req, uint32_t request_id, const cJSON *root, std::string_view type) {
             for (const auto &command: COMMANDS) {
                 if (command.type == type) {
                     return command.handler(req, request_id, root);
@@ -272,7 +390,7 @@ namespace protocol {
         return err;
     }
 
-    esp_err_t send_state(httpd_req_t *req, const int request_id) {
+    esp_err_t send_state(httpd_req_t *req, const uint32_t request_id) {
         cJSON *root = cJSON_CreateObject();
         if (root == nullptr) {
             return ESP_ERR_NO_MEM;
@@ -301,24 +419,30 @@ namespace protocol {
         cJSON *root = cJSON_ParseWithLength(data, len);
 
         if (root == nullptr) {
-            return send_error(req, -1, "invalid_json");
+            return send_error(req, std::nullopt, "invalid_json");
         }
 
         const cJSON *type = cJSON_GetObjectItemCaseSensitive(root, "type");
 
-        const cJSON *id = cJSON_GetObjectItemCaseSensitive(root, "id");
+        if (type == nullptr) {
+            cJSON_Delete(root);
+            return send_error(req, std::nullopt, "missing_argument", "type");
+        }
 
         if (!cJSON_IsString(type)) {
             cJSON_Delete(root);
-            return send_error(req, -1, "missing_type");
+            return send_error(req, std::nullopt, "wrong_type", "type");
         }
 
-        if (!cJSON_IsNumber(id)) {
+        uint32_t request_id = 0;
+
+        const auto id_err =
+                json_get_uint32(root, "id", &request_id);
+
+        if (id_err != JsonFieldError::Ok) {
             cJSON_Delete(root);
-            return send_error(req, -1, "missing_id");
+            return send_field_error(req, std::nullopt, "id", id_err);
         }
-
-        const int request_id = id->valueint;
 
         const esp_err_t err = dispatch_command(req, request_id, root, type->valuestring);
 
