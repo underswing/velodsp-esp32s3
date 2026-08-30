@@ -31,7 +31,7 @@ static void wifi_status_changed(wifi_status_t status) {
 }
 
 extern "C" void app_main(void) {
-    ESP_ERROR_CHECK(device_state_init());
+    ESP_ERROR_CHECK(device::init());
 
     esp_err_t err;
 

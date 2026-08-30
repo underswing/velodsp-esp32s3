@@ -1,55 +1,82 @@
 #include "device_state.hpp"
 #include <cstring>
+#include <cmath>
 
 #include "esp_err.h"
 
-static device_state_t s_state = {};
+namespace device {
+    namespace {
+        constexpr float_t OutputGainMinDB = -80.0f;
+        constexpr float_t OutputGainMaxDb = 12.0f;
 
-static void init_default_peq_band(peq_band_t *band) {
-    *band = (peq_band_t){
-        .enabled = false,
-        .frequency_hz = 1000.0f,
-        .gain_db = 0.0f,
-        .q = 1.0f,
-        .type = EQ_TYPE_PEAK,
-    };
-}
+        State s_state = {};
 
-static void init_default_input_state(input_state_t *state) {
-    state->gain_db = 0.0f;
-    state->muted = false;
+        void init_default_peq_band(PeqBand *band) {
+            *band = (PeqBand){
+                .enabled = false,
+                .frequency_hz = 1000.0f,
+                .gain_db = 0.0f,
+                .q = 1.0f,
+                .type = FilterType::PEAK,
+            };
+        }
 
-    for (auto & i : state->peq) {
-        init_default_peq_band(&i);
-    }
-}
+        void init_default_input_state(InputState *state) {
+            state->gain_db = 0.0f;
+            state->muted = false;
 
-static void init_default_output_state(output_state_t *state) {
-    state->gain_db = 0.0f;
-    state->muted = false;
+            for (auto & i : state->peq) {
+                init_default_peq_band(&i);
+            }
+        }
 
-    for (auto & i : state->peq) {
-        init_default_peq_band(&i);
-    }
-}
+        void init_default_output_state(OutputState *state) {
+            state->gain_db = 0.0f;
+            state->muted = false;
 
-esp_err_t device_state_init() {
-    memset(&s_state, 0, sizeof(s_state));
-
-    for (auto & input : s_state.dsp.inputs) {
-        init_default_input_state(&input);
-    }
-
-    for (auto & output : s_state.dsp.outputs) {
-        init_default_output_state(&output);
+            for (auto & i : state->peq) {
+                init_default_peq_band(&i);
+            }
+        }
     }
 
-    s_state.active_preset = INVALID_PRESET;
-    s_state.preset_modified = false;
+    esp_err_t init() {
+        memset(&s_state, 0, sizeof(s_state));
 
-    return ESP_OK;
-}
+        for (auto & input : s_state.dsp.inputs) {
+            init_default_input_state(&input);
+        }
 
-const device_state_t *device_state_get() {
-    return &s_state;
+        for (auto & output : s_state.dsp.outputs) {
+            init_default_output_state(&output);
+        }
+
+        s_state.active_preset = InvalidPreset;
+        s_state.preset_modified = false;
+
+        return ESP_OK;
+    }
+
+    const State& get_state() {
+        return s_state;
+    }
+
+    DeviceError set_output_gain(const size_t output, const float gain_db) {
+        if (output >= OutputCount) {
+            return DeviceError::InvalidOutput;
+        }
+
+        if (!std::isfinite(gain_db)) {
+            return DeviceError::InvalidGain;
+        }
+
+        if (gain_db < OutputGainMinDB || gain_db > OutputGainMaxDb) {
+            return DeviceError::GainOutOfRange;
+        }
+
+        s_state.dsp.outputs[output].gain_db = gain_db;
+        s_state.preset_modified = true;
+
+        return DeviceError::Ok;
+    }
 }

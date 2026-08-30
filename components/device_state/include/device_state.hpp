@@ -1,57 +1,70 @@
 #pragma once
 
+#include <array>
 #include <cstdint>
+#include <limits>
 
 #include "esp_err.h"
 
-#define INPUT_COUNT  4
-#define OUTPUT_COUNT 8
-#define PEQ_BANDS    10
-#define INVALID_PRESET UINT8_MAX
+namespace device {
+    constexpr size_t InputCount = 4;
+    constexpr size_t OutputCount = 8;
+    constexpr size_t PeqBands = 10;
+    constexpr uint8_t InvalidPreset = std::numeric_limits<uint8_t>::max();
 
-typedef enum {
-    EQ_TYPE_PEAK,
-} filter_type_t;
+    enum class DeviceError {
+        Ok,
+        InvalidOutput,
+        GainOutOfRange,
+        InvalidGain,
+    };
 
-typedef struct {
-    bool enabled;
-    float frequency_hz;
-    float gain_db;
-    float q;
-    filter_type_t type;
-} peq_band_t;
+    enum class FilterType {
+        PEAK,
+    };
 
-typedef struct {
-    float gain_db;
-    bool muted;
+    struct PeqBand {
+        bool enabled;
+        float frequency_hz;
+        float gain_db;
+        float q;
+        FilterType type;
+    };
 
-    peq_band_t peq[PEQ_BANDS];
-} input_state_t;
+    struct InputState {
+        float gain_db;
+        bool muted;
 
-typedef struct {
-    float gain_db;
-    bool muted;
+        std::array<PeqBand, PeqBands> peq;
+    };
 
-    peq_band_t peq[PEQ_BANDS];
-} output_state_t;
+    struct OutputState {
+        float gain_db;
+        bool muted;
 
-typedef struct {
-    input_state_t inputs[INPUT_COUNT];
-    output_state_t outputs[OUTPUT_COUNT];
-} dsp_config_t;
+        std::array<PeqBand, PeqBands> peq;
+    };
 
-typedef struct {
-    char name[32];
-    dsp_config_t config;
-} preset_t;
+    struct DspConfig {
+        std::array<InputState, InputCount> inputs;
+        std::array<OutputState, OutputCount> outputs;
+    };
 
-typedef struct {
-    dsp_config_t dsp;
+    struct Preset {
+        char name[32];
+        DspConfig config;
+    };
 
-    uint8_t active_preset;
-    bool preset_modified;
-} device_state_t;
+    struct State {
+        DspConfig dsp;
 
-const device_state_t* device_state_get();
+        uint8_t active_preset;
+        bool preset_modified;
+    };
 
-esp_err_t device_state_init();
+    const State& get_state();
+
+    esp_err_t init();
+
+    DeviceError set_output_gain(size_t output, float gain_db);
+}

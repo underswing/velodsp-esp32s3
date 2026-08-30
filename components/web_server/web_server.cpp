@@ -13,7 +13,7 @@ static httpd_handle_t s_server = nullptr;
 
 static esp_err_t websocket_connected(httpd_req_t *req) {
     ESP_LOGI(TAG, "WebSocket connected");
-    return protocol_send_hello(req);
+    return protocol::send_hello(req);
 }
 
 static esp_err_t websocket_handler(httpd_req_t *req) {
@@ -44,7 +44,7 @@ static esp_err_t websocket_handler(httpd_req_t *req) {
 
         ESP_LOGD(TAG, "Received WebSocket message: %.*s", static_cast<int>(frame.len), buffer);
 
-        err = protocol_handle_message(req, buffer, frame.len);
+        err = protocol::handle_message(req, buffer, frame.len);
     }
 
     free(buffer);
