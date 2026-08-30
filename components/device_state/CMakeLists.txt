@@ -1,4 +1,4 @@
 idf_component_register(
-        SRCS "device_state.c"
+        SRCS "device_state.cpp"
         INCLUDE_DIRS "include"
 )

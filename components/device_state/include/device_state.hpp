@@ -1,6 +1,6 @@
 #pragma once
 
-#include <stdint.h>
+#include <cstdint>
 
 #include "esp_err.h"
 
@@ -52,6 +52,6 @@ typedef struct {
     bool preset_modified;
 } device_state_t;
 
-const device_state_t* device_state_get(void);
+const device_state_t* device_state_get();
 
-esp_err_t device_state_init(void);
+esp_err_t device_state_init();

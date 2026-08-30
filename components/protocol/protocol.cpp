@@ -1,11 +1,11 @@
-#include "protocol.h"
+#include "protocol.hpp"
 
 #include "cJSON.h"
 #include "esp_log.h"
 
-#include "device_state.h"
+#include "device_state.hpp"
 
-static const char *TAG = "protocol";
+static auto TAG = "protocol";
 
 static const char *filter_type_to_string(filter_type_t type) {
     switch (type) {
@@ -42,8 +42,8 @@ static cJSON *serialize_output(const output_state_t *output) {
         cJSON_Delete(obj);
         return nullptr;
     }
-    for (int i = 0; i < PEQ_BANDS; i++) {
-        cJSON *band = serialize_peq_band(&output->peq[i]);
+    for (const auto & i : output->peq) {
+        cJSON *band = serialize_peq_band(&i);
 
         if (band == nullptr) {
             cJSON_Delete(obj);
@@ -68,8 +68,8 @@ static cJSON *serialize_input(const input_state_t *input) {
         cJSON_Delete(obj);
         return nullptr;
     }
-    for (int i = 0; i < PEQ_BANDS; i++) {
-        cJSON *band = serialize_peq_band(&input->peq[i]);
+    for (const auto & i : input->peq) {
+        cJSON *band = serialize_peq_band(&i);
 
         if (band == nullptr) {
             cJSON_Delete(obj);
@@ -91,8 +91,8 @@ static cJSON *serialize_dsp_config(const dsp_config_t *config) {
         cJSON_Delete(root);
         return nullptr;
     }
-    for (int i = 0; i < INPUT_COUNT; i++) {
-        cJSON *input = serialize_input(&config->inputs[i]);
+    for (const auto & i : config->inputs) {
+        cJSON *input = serialize_input(&i);
         if (input == nullptr) {
             cJSON_Delete(root);
             return nullptr;
@@ -106,8 +106,8 @@ static cJSON *serialize_dsp_config(const dsp_config_t *config) {
         cJSON_Delete(root);
         return nullptr;
     }
-    for (int i = 0; i < OUTPUT_COUNT; i++) {
-        cJSON *output = serialize_output(&config->outputs[i]);
+    for (const auto & i : config->outputs) {
+        cJSON *output = serialize_output(&i);
         if (output == nullptr) {
             cJSON_Delete(root);
             return nullptr;
@@ -147,7 +147,7 @@ static esp_err_t send_json(httpd_req_t *req, const cJSON *json) {
         .final = true,
         .fragmented = false,
         .type = HTTPD_WS_TYPE_TEXT,
-        .payload = (uint8_t *)payload,
+        .payload = (uint8_t *) payload,
         .len = strlen(payload)
     };
 

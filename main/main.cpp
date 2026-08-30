@@ -1,13 +1,13 @@
-#include <stdint.h>
+#include <cstdint>
 
 #include "esp_check.h"
 #include "esp_err.h"
 #include "esp_log.h"
 #include "status_led.h"
-#include "web_server.h"
+#include "web_server.hpp"
 #include "wifi.h"
 #include "discovery.h"
-#include "device_state.h"
+#include "device_state.hpp"
 
 #define RGB_LED_GPIO 38
 
@@ -30,7 +30,7 @@ static void wifi_status_changed(wifi_status_t status) {
     }
 }
 
-void app_main(void) {
+extern "C" void app_main(void) {
     ESP_ERROR_CHECK(device_state_init());
 
     esp_err_t err;
