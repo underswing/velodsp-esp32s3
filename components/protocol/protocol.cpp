@@ -6,6 +6,7 @@
 #include <limits>
 #include <cstring>
 #include <string_view>
+#include <cinttypes>
 
 #include "cJSON.h"
 #include "esp_log.h"
@@ -365,10 +366,13 @@ namespace protocol {
         esp_err_t dispatch_command(httpd_req_t *req, uint32_t request_id, const cJSON *root, std::string_view type) {
             for (const auto &command: COMMANDS) {
                 if (command.type == type) {
+                    ESP_LOGD(TAG, "Request id=%" PRIu32 " type=%.*s", request_id, static_cast<int>(type.size()),
+                             type.data());
                     return command.handler(req, request_id, root);
                 }
             }
 
+            ESP_LOGW(TAG, "Unknown command: %.*s", static_cast<int>(type.size()), type.data());
             return send_error(req, request_id, "unknown_command");
         }
     }
@@ -419,6 +423,7 @@ namespace protocol {
         cJSON *root = cJSON_ParseWithLength(data, len);
 
         if (root == nullptr) {
+            ESP_LOGW(TAG, "Received invalid JSON");
             return send_error(req, std::nullopt, "invalid_json");
         }
 
